@@ -53,3 +53,11 @@ Invalid results are displayed as invalid. The application never coerces a consta
 - **RELATIVELY_HIGH / RELATIVELY_LOW / NEUTRAL:** descriptive cross-sectional research states, not buy/sell signals and not claims that reversal will occur.
 
 Missing securities reduce the available peer universe. If the configured minimum universe is unavailable, the cross-sectional output stays invalid rather than silently filling values.
+
+## Step 6 dynamic pair outputs
+
+Kalman **prior beta** is the relationship before the current observation; **filtered beta** is after it. Innovation is actual minus prior model-implied log target; standardized innovation divides by its model variance. OU-likelihood optimized beta is an in-sample statistical construction chosen by likelihood, not a claim of future performance. A weak-identification flag means nearby betas have nearly equal training likelihood.
+
+## Step 8 first-passage outputs
+
+Exit-first and stop-first probabilities are seeded Monte Carlo estimates using fixed OU parameters. Monte Carlo SE describes sampling uncertainty. Median exit time is conditional on simulated exits. Favorable/adverse excursions are path distributions, not outcomes or recommendations.

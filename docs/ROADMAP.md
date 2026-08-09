@@ -4,8 +4,8 @@
 2. Simple benchmark, drift-adjusted and factor residuals (complete)
 3. Pairs, cointegration and pair selection (complete)
 4. OU AR(1) and exact MLE estimation (complete)
-5. PCA and cross-sectional residual models (current)
-6. Kalman dynamic pair and OU-likelihood hedge-ratio optimization
+5. PCA and cross-sectional residual models (complete)
+6. Kalman dynamic pair and OU-likelihood hedge-ratio optimization (current)
 7. Stationarity, regime and parameter-stability diagnostics
 8. First-passage and Monte Carlo convergence engine
 9. Optimal stopping, transaction costs and stop-loss integration

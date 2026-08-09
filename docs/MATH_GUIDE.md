@@ -54,3 +54,11 @@ PCA begins with daily log returns. At date `t`, each security is standardized wi
 `residual_return = actual_return - PCA_reconstructed_common_return`. The accumulated PCA residual state is a rolling sum of residual returns; it is not automatically stationary and is not fitted to OU inside this module. Principal-component signs are not inherently meaningful because an eigenvector may be sign-flipped without changing reconstruction.
 
 Cross-sectional deviation compares a stock with peers at the same date. For available residual returns it computes the peer mean, sample standard deviation, rank, percentile, and z-score. This differs from a time-series residual z-score, which asks whether a stock is unusual relative to its own prior residual behavior. The two diagnostics are not interchangeable.
+
+## Step 6 dynamic pairs
+
+The Kalman pair filter treats alpha and beta in `log(A)=alpha_t+beta_t*log(B)+innovation_t` as latent random-walk states. It exposes the prior beta before observing each date and filtered beta after that date's observation; neither uses future data. OU hedge-ratio optimization evaluates a bounded, transparent beta grid only on the stated training sample and selects highest average exact-OU conditional likelihood, not shortest half-life, return, or profit. A flat likelihood surface is flagged as weakly identified.
+
+## Step 8 first passage
+
+First-passage simulation uses already-fitted OU parameters and exact discrete transitions. It records the first exit or stop boundary crossed, rather than terminal location. For a coarse step spanning both boundaries, linear crossing fractions choose the earlier crossing; a tie is conservatively assigned to stop. Monte Carlo probabilities include sampling standard error. Expected OU decay and half-life are not realized boundary hitting times.
