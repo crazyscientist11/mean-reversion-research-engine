@@ -10,6 +10,8 @@ from src.models import detrended_log_price_residual, factor_residual_model, roll
 from src.models.common import ResidualModelResult
 from src.models.pairs import PairModelResult, peer_comparison, rolling_pair_model
 from src.models.ou import OUComparisonResult, OUFitResult, conditional_band, fit_ou_both
+from src.models.pca_model import PCAResidualResult, rolling_pca_residuals
+from src.models.cross_sectional import cross_sectional_residuals
 
 
 def _format(value: float | None, decimals: int = 4) -> str:
@@ -47,6 +49,11 @@ def _peer_table(prices: pd.DataFrame, target: str, peers: tuple[str, ...], windo
 @st.cache_data(show_spinner=False)
 def _fit_ou_models(state: pd.Series, window: int) -> OUComparisonResult:
     return fit_ou_both(state.iloc[-window:], dt=1.0, time_unit="trading days")
+
+
+@st.cache_data(show_spinner=False)
+def _run_pca(prices: pd.DataFrame, window: int, components: int | float, state_window: int) -> PCAResidualResult:
+    return rolling_pca_residuals(prices, window=window, n_components=components, residual_state_window=state_window)
 
 
 def _model_metric_card(result: ResidualModelResult, labels: tuple[str, str, str]) -> None:
@@ -248,13 +255,69 @@ def _ou_dynamics(prices: pd.DataFrame) -> None:
         st.caption("Bands are OU model-implied conditional distribution bands, not guaranteed confidence intervals. Half-life describes expected displacement decay, not an expected realized exit time. First-passage analysis is deferred.")
 
 
+def _pca_cross_sectional(prices: pd.DataFrame) -> None:
+    st.subheader("PCA / cross-sectional research")
+    st.caption("PCA reconstructs common return movement from a prior training window. Cross-sectional extremes are research states, not reversal or trade signals.")
+    tickers = list(prices.columns)
+    with st.form("pca_cross_sectional"):
+        target = st.selectbox("PCA target ticker", tickers)
+        selection = st.selectbox("PCA component selection", ["Fixed component count", "Explained variance threshold"])
+        with st.container(horizontal=True):
+            fixed_components = int(st.number_input("Fixed component count", min_value=1, max_value=len(tickers), value=1, step=1))
+            explained_threshold = float(st.number_input("Explained variance threshold", min_value=0.05, max_value=1.0, value=0.80, step=0.05))
+            pca_window = int(st.number_input("PCA training window", min_value=3, value=252, step=1))
+            state_window = int(st.number_input("Residual-state window", min_value=1, value=20, step=1))
+        cross_threshold = float(st.number_input("Cross-sectional z-score threshold", min_value=0.1, value=2.0, step=0.1))
+        submitted = st.form_submit_button("Run PCA / cross-sectional research")
+    if not submitted:
+        st.info("Select the universe settings and run the research models. No analysis runs automatically.")
+        return
+    components: int | float = fixed_components if selection == "Fixed component count" else explained_threshold
+    try:
+        pca = _run_pca(prices, pca_window, components, state_window)
+        cross = cross_sectional_residuals(pca.residual_returns, minimum_universe_size=max(2, min(3, len(tickers))), zscore_threshold=cross_threshold)
+    except (TypeError, ValueError) as exc:
+        st.error(f"PCA inputs are invalid: {exc}")
+        return
+    date = prices.index[-1]
+    if not bool(pca.valid_observations.loc[date]):
+        st.warning(f"PCA is invalid for the current date: {pca.invalid_reasons.loc[date]}")
+    with st.container(border=True):
+        st.subheader("Current target PCA research output")
+        with st.container(horizontal=True):
+            st.metric("Actual target return", _format(pca.actual_returns.loc[date, target]))
+            st.metric("PCA reconstructed return", _format(pca.reconstructed_returns.loc[date, target]))
+            st.metric("Idiosyncratic residual", _format(pca.residual_returns.loc[date, target]))
+            st.metric("Residual z-score", _format(pca.residual_zscores.loc[date, target]))
+            st.metric("Accumulated residual state", _format(pca.accumulated_residual_state.loc[date, target]))
+    explained_rows = pca.explained_variance_by_component.dropna(how="all")
+    if not explained_rows.empty:
+        with st.container(border=True):
+            st.subheader("Explained variance by principal component")
+            st.bar_chart(explained_rows.iloc[-1])
+    with st.container(border=True):
+        st.subheader("Target actual versus PCA reconstructed returns")
+        st.line_chart(pd.DataFrame({"Actual return": pca.actual_returns[target], "PCA reconstructed return": pca.reconstructed_returns[target]}))
+    with st.container(border=True):
+        st.subheader("Target PCA residual history")
+        st.line_chart(pca.residual_returns[target])
+    with st.container(border=True):
+        st.subheader("Target accumulated residual state")
+        st.caption("Rolling sum of PCA residual returns; it is not a stationarity conclusion.")
+        st.line_chart(pca.accumulated_residual_state[target])
+    with st.container(border=True):
+        st.subheader("Cross-sectional residual research table")
+        st.caption("Time-series residual z-scores and cross-sectional z-scores answer different questions. Neither is a trade instruction.")
+        st.dataframe(cross.current_table(), hide_index=True)
+
+
 def main() -> None:
     st.set_page_config(page_title="Mean Reversion Research Engine", layout="wide")
     st.title("Mean Reversion Research Engine")
-    st.caption("Step 4 research foundation — educational quantitative research; not investment advice.")
-    landing, single_stock, pairs, ou_dynamics = st.tabs(["Project overview", "Single stock models", "Pairs research", "OU dynamics"])
+    st.caption("Step 5 research foundation — educational quantitative research; not investment advice.")
+    landing, single_stock, pairs, ou_dynamics, pca_cross_sectional = st.tabs(["Project overview", "Single stock models", "Pairs research", "OU dynamics", "PCA / Cross-Sectional"])
     with landing:
-        st.info("Implemented: validated CSV inputs, immutable prediction-journal infrastructure, prior-window residual research models, rolling pair diagnostics, and reusable OU dynamics estimation.")
+        st.info("Implemented: validated CSV inputs, immutable prediction-journal infrastructure, prior-window residual research models, pair/OU diagnostics, PCA residual reconstruction, and cross-sectional research states.")
         st.subheader("CSV preview")
         upload = st.file_uploader("Upload a wide-form adjusted-price CSV (optional)", type=["csv"])
         if upload is not None:
@@ -270,7 +333,7 @@ def main() -> None:
         st.subheader("Prediction journal")
         st.write("A forward prediction snapshot is frozen at its data cutoff. Later realized outcomes are stored separately, preventing historical predictions from being rewritten.")
         st.subheader("Roadmap")
-        st.write("Current scope is Step 4: residual research, static pairs, and OU dynamics. See `docs/ROADMAP.md` for later work.")
+        st.write("Current scope is Step 5: residual research, static pairs, OU dynamics, PCA, and cross-sectional comparisons. See `docs/ROADMAP.md` for later work.")
     with single_stock:
         prices = st.session_state.get("uploaded_prices")
         if prices is None:
@@ -295,6 +358,14 @@ def main() -> None:
             st.warning("At least two ticker columns are required.")
         else:
             _ou_dynamics(prices)
+    with pca_cross_sectional:
+        prices = st.session_state.get("uploaded_prices")
+        if prices is None:
+            st.info("Upload and validate a CSV in Project overview first.")
+        elif len(prices.columns) < 2:
+            st.warning("At least two ticker columns are required.")
+        else:
+            _pca_cross_sectional(prices)
 
 
 if __name__ == "__main__":

@@ -46,3 +46,11 @@ The exact-MLE estimator uses `X_(t+dt)|X_t` with conditional mean `theta + (X_t-
 For a valid fit, half-life is `ln(2)/kappa`; 75% and 90% conditional expected displacement decay times are `-ln(0.25)/kappa` and `-ln(0.10)/kappa`. Conditional expectation at horizon `h` is `theta + (X_t-theta)exp(-kappa*h)`, with the same exact-transition variance formula using `h`.
 
 These are conditional expectation and distribution statements. They do **not** give the first time a stochastic path hits an exit boundary, guarantee realized convergence, or supply optimal trading thresholds. First-passage and optimal-stopping research remain future work.
+
+## Step 5 PCA and cross-sectional residuals
+
+PCA begins with daily log returns. At date `t`, each security is standardized with mean and standard deviation calculated only on the prior training window ending at `t-1`. PCA loadings and component counts are fitted on that same standardized window. The current return is then projected through the frozen scaler and loadings, reconstructed in standardized units, and converted back to return units.
+
+`residual_return = actual_return - PCA_reconstructed_common_return`. The accumulated PCA residual state is a rolling sum of residual returns; it is not automatically stationary and is not fitted to OU inside this module. Principal-component signs are not inherently meaningful because an eigenvector may be sign-flipped without changing reconstruction.
+
+Cross-sectional deviation compares a stock with peers at the same date. For available residual returns it computes the peer mean, sample standard deviation, rank, percentile, and z-score. This differs from a time-series residual z-score, which asks whether a stock is unusual relative to its own prior residual behavior. The two diagnostics are not interchangeable.

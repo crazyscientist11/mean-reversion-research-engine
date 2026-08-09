@@ -41,3 +41,15 @@ Structural breaks, changing business exposures, corporate actions, and model ins
 - **AR(1) versus exact MLE differences:** estimator disagreement made visible as a diagnostic, not an automatic rejection rule.
 
 Invalid results are displayed as invalid. The application never coerces a constant, non-finite, explosive, or optimizer-failed series into a mean-reverting model.
+
+## Step 5 PCA and cross-sectional outputs
+
+- **PCA reconstructed return:** the part of a current return represented by components fitted only on prior standardized returns.
+- **Idiosyncratic residual:** actual return minus PCA reconstructed return. It is a model-specific residual, not a valuation statement.
+- **Explained variance:** fraction of prior standardized-universe variation represented by a component; it is in-sample and can change.
+- **Loadings:** component coordinates for each stock. Component sign orientation is arbitrary.
+- **Accumulated residual state:** rolling sum of PCA residual returns; it is not proof of stationarity.
+- **Cross-sectional rank, percentile, and z-score:** how a residual compares to the available peer universe at that date.
+- **RELATIVELY_HIGH / RELATIVELY_LOW / NEUTRAL:** descriptive cross-sectional research states, not buy/sell signals and not claims that reversal will occur.
+
+Missing securities reduce the available peer universe. If the configured minimum universe is unavailable, the cross-sectional output stays invalid rather than silently filling values.

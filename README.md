@@ -4,7 +4,7 @@ An extensible workstation for testing whether carefully constructed equity resid
 
 ## Current status
 
-**Step 4 — OU dynamics research.** The repository provides validated daily CSV ingestion, non-mutating transforms, immutable forward-prediction infrastructure, prior-window single-stock/pair residual research, and AR(1) plus exact-MLE OU diagnostics in trading-day units. It intentionally does not implement Kalman filtering, optimal stopping, first-passage analysis, live trading, or Bloomberg integration.
+**Step 5 — PCA and cross-sectional research.** The repository provides validated daily CSV ingestion, non-mutating transforms, immutable forward-prediction infrastructure, prior-window single-stock/pair residual research, OU diagnostics, PCA common-factor reconstruction, and cross-sectional residual states. It intentionally does not implement Kalman filtering, optimal stopping, first-passage analysis, live trading, or Bloomberg integration.
 
 ## Research question
 
