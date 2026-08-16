@@ -10,14 +10,6 @@ from src.models import detrended_log_price_residual, factor_residual_model, roll
 from src.models.common import ResidualModelResult
 from src.models.pairs import PairModelResult, peer_comparison, rolling_pair_model
 from src.models.ou import OUComparisonResult, OUFitResult, conditional_band, fit_ou_both
-from src.models.pca_model import PCAResidualResult, rolling_pca_residuals
-from src.models.cross_sectional import cross_sectional_residuals
-from src.models.kalman_pair import kalman_pair_filter
-from src.models.ou_pair_optimizer import optimize_ou_hedge_ratio
-from src.first_passage import BoundaryDefinition, ResidualDirection
-from src.monte_carlo import simulate_ou_first_passage
-from src.costs import CostModel
-from src.decision import DecisionGates, PositionState, ResearchAction, StoppingConfig, benchmark_action, build_policy, evaluate_policy, regions
 
 
 def _format(value: float | None, decimals: int = 4) -> str:
@@ -57,15 +49,8 @@ def _fit_ou_models(state: pd.Series, window: int) -> OUComparisonResult:
     return fit_ou_both(state.iloc[-window:], dt=1.0, time_unit="trading days")
 
 
-@st.cache_data(show_spinner=False)
-def _run_pca(prices: pd.DataFrame, window: int, components: int | float, state_window: int) -> PCAResidualResult:
-    return rolling_pca_residuals(prices, window=window, n_components=components, residual_state_window=state_window)
-
-
 def _model_metric_card(result: ResidualModelResult, labels: tuple[str, str, str]) -> None:
     snapshot = result.current_snapshot()
-    kalman = kalman_pair_filter(prices, target_ticker=target, peer_ticker=peer)
-    optimized = optimize_ou_hedge_ratio(prices, target_ticker=target, peer_ticker=peer, beta_min=-3.0, beta_max=3.0, grid_size=61)
     with st.container(border=True):
         st.subheader(result.model_name)
         if not snapshot.valid:
@@ -170,11 +155,6 @@ def _pairs_research(prices: pd.DataFrame) -> None:
         })
         st.caption("Regression beta is not a dollar-neutral position size. The theoretical notation is +1 target regression unit and -beta peer regression units.")
     with st.container(border=True):
-        st.subheader("Pair construction comparison")
-        comparison = pd.DataFrame({"method": ["OLS / cointegration regression", "OU likelihood optimized", "Kalman filtered"], "hedge_ratio": [snapshot.beta, optimized.optimal_beta, kalman.beta.iloc[-1]], "OU_log_likelihood": [None, optimized.objective, None], "warning": [None, "WEAKLY_IDENTIFIED_HEDGE_RATIO" if optimized.weakly_identified else None, None]})
-        st.dataframe(comparison, hide_index=True)
-        st.caption("OU optimization uses only the displayed training sample's likelihood; lowest half-life alone is not a selection rule.")
-    with st.container(border=True):
         st.subheader("Normalized target and peer prices")
         normalized = prices[[target, peer]].divide(prices[[target, peer]].iloc[0]).rename(columns={target: f"{target} normalized", peer: f"{peer} normalized"})
         st.line_chart(normalized)
@@ -268,114 +248,13 @@ def _ou_dynamics(prices: pd.DataFrame) -> None:
         st.caption("Bands are OU model-implied conditional distribution bands, not guaranteed confidence intervals. Half-life describes expected displacement decay, not an expected realized exit time. First-passage analysis is deferred.")
 
 
-def _pca_cross_sectional(prices: pd.DataFrame) -> None:
-    st.subheader("PCA / cross-sectional research")
-    st.caption("PCA reconstructs common return movement from a prior training window. Cross-sectional extremes are research states, not reversal or trade signals.")
-    tickers = list(prices.columns)
-    with st.form("pca_cross_sectional"):
-        target = st.selectbox("PCA target ticker", tickers)
-        selection = st.selectbox("PCA component selection", ["Fixed component count", "Explained variance threshold"])
-        with st.container(horizontal=True):
-            fixed_components = int(st.number_input("Fixed component count", min_value=1, max_value=len(tickers), value=1, step=1))
-            explained_threshold = float(st.number_input("Explained variance threshold", min_value=0.05, max_value=1.0, value=0.80, step=0.05))
-            pca_window = int(st.number_input("PCA training window", min_value=3, value=252, step=1))
-            state_window = int(st.number_input("Residual-state window", min_value=1, value=20, step=1))
-        cross_threshold = float(st.number_input("Cross-sectional z-score threshold", min_value=0.1, value=2.0, step=0.1))
-        submitted = st.form_submit_button("Run PCA / cross-sectional research")
-    if not submitted:
-        st.info("Select the universe settings and run the research models. No analysis runs automatically.")
-        return
-    components: int | float = fixed_components if selection == "Fixed component count" else explained_threshold
-    try:
-        pca = _run_pca(prices, pca_window, components, state_window)
-        cross = cross_sectional_residuals(pca.residual_returns, minimum_universe_size=max(2, min(3, len(tickers))), zscore_threshold=cross_threshold)
-    except (TypeError, ValueError) as exc:
-        st.error(f"PCA inputs are invalid: {exc}")
-        return
-    date = prices.index[-1]
-    if not bool(pca.valid_observations.loc[date]):
-        st.warning(f"PCA is invalid for the current date: {pca.invalid_reasons.loc[date]}")
-    with st.container(border=True):
-        st.subheader("Current target PCA research output")
-        with st.container(horizontal=True):
-            st.metric("Actual target return", _format(pca.actual_returns.loc[date, target]))
-            st.metric("PCA reconstructed return", _format(pca.reconstructed_returns.loc[date, target]))
-            st.metric("Idiosyncratic residual", _format(pca.residual_returns.loc[date, target]))
-            st.metric("Residual z-score", _format(pca.residual_zscores.loc[date, target]))
-            st.metric("Accumulated residual state", _format(pca.accumulated_residual_state.loc[date, target]))
-    explained_rows = pca.explained_variance_by_component.dropna(how="all")
-    if not explained_rows.empty:
-        with st.container(border=True):
-            st.subheader("Explained variance by principal component")
-            st.bar_chart(explained_rows.iloc[-1])
-    with st.container(border=True):
-        st.subheader("Target actual versus PCA reconstructed returns")
-        st.line_chart(pd.DataFrame({"Actual return": pca.actual_returns[target], "PCA reconstructed return": pca.reconstructed_returns[target]}))
-    with st.container(border=True):
-        st.subheader("Target PCA residual history")
-        st.line_chart(pca.residual_returns[target])
-    with st.container(border=True):
-        st.subheader("Target accumulated residual state")
-        st.caption("Rolling sum of PCA residual returns; it is not a stationarity conclusion.")
-        st.line_chart(pca.accumulated_residual_state[target])
-    with st.container(border=True):
-        st.subheader("Cross-sectional residual research table")
-        st.caption("Time-series residual z-scores and cross-sectional z-scores answer different questions. Neither is a trade instruction.")
-        st.dataframe(cross.current_table(), hide_index=True)
-
-def _first_passage_analysis() -> None:
-    st.subheader("First-passage analysis")
-    st.caption("Uses supplied OU parameters only. Expected convergence is distinct from simulated first-boundary outcomes.")
-    with st.form("first_passage"):
-        direction=st.selectbox("Residual direction", ["LONG_RESIDUAL","SHORT_RESIDUAL"]); current=float(st.number_input("Current residual", value=0.0)); exit_boundary=float(st.number_input("Exit boundary", value=0.5)); stop_boundary=float(st.number_input("Stop boundary", value=-0.5)); theta=float(st.number_input("OU theta", value=0.0)); kappa=float(st.number_input("OU kappa per trading day", min_value=0.0001,value=0.1)); sigma=float(st.number_input("OU sigma", min_value=0.0,value=0.1)); paths=int(st.number_input("Simulation paths", min_value=100,value=5000,step=100)); submitted=st.form_submit_button("Run boundary simulation")
-    if not submitted: return
-    try:
-        boundary=BoundaryDefinition(current,exit_boundary,stop_boundary,ResidualDirection(direction)); result=simulate_ou_first_passage(theta=theta,kappa=kappa,sigma=sigma,boundaries=boundary,number_paths=paths,maximum_horizon=20,seed=0)
-    except ValueError as exc: st.error(str(exc)); return
-    with st.container(border=True):
-        with st.container(horizontal=True):
-            st.metric("P(exit before stop)",_format(result.exit_before_stop)); st.metric("P(stop first)",_format(result.stop_before_exit)); st.metric("P(exit 5d / 10d / 20d)",f"{_format(result.exit_within_5)} / {_format(result.exit_within_10)} / {_format(result.exit_within_20)}"); st.metric("Monte Carlo SE",_format(result.monte_carlo_se_exit)); st.metric("Median exit time",_format(result.median_exit_time,1))
-    st.line_chart(pd.DataFrame(result.sample_paths.T))
-    st.caption("Sample paths use exact OU transitions. Boundary result records first crossing; a coarse-step tie is conservatively assigned to stop.")
-
-def _trading_decision_research() -> None:
-    st.subheader("Trading Decision Research")
-    st.warning("Paper-inspired numerical optimal-stopping research output. Not personalized investment advice and not an analytical reproduction of Li (2015).")
-    with st.form("decision"):
-        position = PositionState(st.selectbox("Current position state", [state.value for state in PositionState]))
-        current=float(st.number_input("Current residual state",value=-1.0)); zscore=float(st.number_input("Current residual z-score (benchmark only)",value=-2.0)); theta=float(st.number_input("Decision OU theta",value=0.0)); kappa=float(st.number_input("Decision OU kappa",min_value=.0001,value=.15)); sigma=float(st.number_input("Decision OU sigma",min_value=.0001,value=.2)); long_stop=float(st.number_input("Long residual stop",value=-2.5)); short_stop=float(st.number_input("Short residual stop",value=2.5)); entry_cost=float(st.number_input("Fixed entry cost",min_value=0.,value=.01)); exit_cost=float(st.number_input("Fixed exit cost",min_value=0.,value=.01)); spread_bps=float(st.number_input("Bid-ask cost (bps)",min_value=0.,value=0.)); slippage_bps=float(st.number_input("Slippage (bps)",min_value=0.,value=0.)); commission=float(st.number_input("Commission",min_value=0.,value=0.)); opportunity_rate=float(st.number_input("Annual opportunity rate",min_value=0.,value=0.)); paths=int(st.number_input("First-passage simulation paths",min_value=100,value=2000,step=100)); ou_gate=st.checkbox("OU validity gate",value=True); stationarity_gate=st.checkbox("Stationarity gate",value=True); regime_gate=st.checkbox("Regime gate",value=True); sufficient_data=st.checkbox("Sufficient-data gate",value=True); submitted=st.form_submit_button("Evaluate research policy")
-    if not submitted:return
-    config=StoppingConfig(theta=theta,kappa=kappa,sigma=sigma,grid_min=min(long_stop-1,theta-3*sigma),grid_max=max(short_stop+1,theta+3*sigma),long_stop=long_stop,short_stop=short_stop)
-    costs=CostModel(fixed_entry_cost=entry_cost,fixed_exit_cost=exit_cost,bid_ask_bps=spread_bps,slippage_bps=slippage_bps,commission=commission,annual_opportunity_rate=opportunity_rate)
-    policy=build_policy(config,costs); action=evaluate_policy(policy,current,position,DecisionGates(ou_gate,stationarity_gate,regime_gate,sufficient_data)); policy_action,policy_value,next_action,next_value=policy.action_at(current,position)
-    with st.container(border=True):
-        st.subheader("Final research action")
-        with st.container(horizontal=True):
-            st.metric("Gated action",action.value,border=True); st.metric("Policy action",policy_action.value,border=True); st.metric("Policy value",_format(policy_value),border=True); st.metric("Next-best action",next_action.value,border=True); st.metric("Value advantage",_format(policy_value-next_value),border=True); st.metric("Z-score benchmark",benchmark_action(zscore,position).value,border=True)
-        st.write({"long entry regions":regions(policy.grid,policy.flat_actions,ResearchAction.ENTER_LONG),"short entry regions":regions(policy.grid,policy.flat_actions,ResearchAction.ENTER_SHORT)})
-        st.write({"OU validity":"PASS" if ou_gate else "FAIL","Stationarity":"PASS" if stationarity_gate else "FAIL","Regime":"PASS" if regime_gate else "FAIL","Data":"PASS" if sufficient_data else "FAIL","Economic value":"PASS" if policy_value>0 else "FAIL / WAIT"})
-    if action in {ResearchAction.ENTER_LONG, ResearchAction.HOLD_LONG}:
-        boundary=BoundaryDefinition(current,theta,long_stop,ResidualDirection.LONG_RESIDUAL)
-    elif action in {ResearchAction.ENTER_SHORT, ResearchAction.HOLD_SHORT}:
-        boundary=BoundaryDefinition(current,theta,short_stop,ResidualDirection.SHORT_RESIDUAL)
-    else:
-        boundary=None
-    if boundary is not None:
-        result=simulate_ou_first_passage(theta=theta,kappa=kappa,sigma=sigma,boundaries=boundary,number_paths=paths,maximum_horizon=20,seed=0)
-        with st.container(border=True):
-            st.subheader("Selected-policy first-passage check")
-            with st.container(horizontal=True):
-                st.metric("P(exit first)",_format(result.exit_before_stop),border=True); st.metric("P(stop first)",_format(result.stop_before_exit),border=True); st.metric("P(exit within 5d / 10d / 20d)",f"{_format(result.exit_within_5)} / {_format(result.exit_within_10)} / {_format(result.exit_within_20)}",border=True); st.metric("Monte Carlo SE",_format(result.monte_carlo_se_exit),border=True)
-            st.caption("This first-passage distribution is shown separately from the expected-value policy and does not replace it.")
-
-
 def main() -> None:
     st.set_page_config(page_title="Mean Reversion Research Engine", layout="wide")
     st.title("Mean Reversion Research Engine")
-    st.caption("Step 5 research foundation — educational quantitative research; not investment advice.")
-    landing, single_stock, pairs, ou_dynamics, pca_cross_sectional, first_passage, decision = st.tabs(["Project overview", "Single stock models", "Pairs research", "OU dynamics", "PCA / Cross-Sectional", "First-Passage Analysis", "Trading Decision Research"])
+    st.caption("Step 4 research foundation — educational quantitative research; not investment advice.")
+    landing, single_stock, pairs, ou_dynamics = st.tabs(["Project overview", "Single stock models", "Pairs research", "OU dynamics"])
     with landing:
-        st.info("Implemented: validated CSV inputs, immutable prediction-journal infrastructure, prior-window residual research models, pair/OU diagnostics, PCA residual reconstruction, and cross-sectional research states.")
+        st.info("Implemented: validated CSV inputs, immutable prediction-journal infrastructure, prior-window residual research models, rolling pair diagnostics, and reusable OU dynamics estimation.")
         st.subheader("CSV preview")
         upload = st.file_uploader("Upload a wide-form adjusted-price CSV (optional)", type=["csv"])
         if upload is not None:
@@ -391,7 +270,7 @@ def main() -> None:
         st.subheader("Prediction journal")
         st.write("A forward prediction snapshot is frozen at its data cutoff. Later realized outcomes are stored separately, preventing historical predictions from being rewritten.")
         st.subheader("Roadmap")
-        st.write("Current scope is Step 5: residual research, static pairs, OU dynamics, PCA, and cross-sectional comparisons. See `docs/ROADMAP.md` for later work.")
+        st.write("Current scope is Step 4: residual research, static pairs, and OU dynamics. See `docs/ROADMAP.md` for later work.")
     with single_stock:
         prices = st.session_state.get("uploaded_prices")
         if prices is None:
@@ -416,19 +295,9 @@ def main() -> None:
             st.warning("At least two ticker columns are required.")
         else:
             _ou_dynamics(prices)
-    with pca_cross_sectional:
-        prices = st.session_state.get("uploaded_prices")
-        if prices is None:
-            st.info("Upload and validate a CSV in Project overview first.")
-        elif len(prices.columns) < 2:
-            st.warning("At least two ticker columns are required.")
-        else:
-            _pca_cross_sectional(prices)
-    with first_passage:
-        _first_passage_analysis()
-    with decision:
-        _trading_decision_research()
 
 
 if __name__ == "__main__":
     main()
+
+
