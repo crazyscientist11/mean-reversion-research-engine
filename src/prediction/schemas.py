@@ -94,6 +94,13 @@ class PredictionEvaluation:
     fraction_reverted: float | None = None
     maximum_favorable_excursion: float | None = None
     maximum_adverse_excursion: float | None = None
+    elapsed_trading_days: int | None = None
+    live_prices: dict[str, float] = field(default_factory=dict)
+    current_residual: float | None = None
+    distance_to_entry: float | None = None
+    distance_to_exit: float | None = None
+    distance_to_stop: float | None = None
+    realized_pnl: float | None = None
     notes: str = ""
 
     def __post_init__(self) -> None:
@@ -101,6 +108,10 @@ class PredictionEvaluation:
             raise ValueError("prediction_id and evaluation_horizon are required")
         if self.realized_price is not None and self.realized_price <= 0:
             raise ValueError("realized_price must be positive when supplied")
+        if self.elapsed_trading_days is not None and self.elapsed_trading_days < 0:
+            raise ValueError("elapsed_trading_days cannot be negative")
+        if any(price <= 0 for price in self.live_prices.values()):
+            raise ValueError("live prices must be positive")
 
     def to_dict(self) -> dict[str, Any]:
         result = asdict(self)

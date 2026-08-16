@@ -1,5 +1,6 @@
 """Step 1 landing page plus Step 2 single-stock research outputs."""
 from io import BytesIO
+from datetime import datetime, timezone
 
 import numpy as np
 import pandas as pd
@@ -15,6 +16,8 @@ from src.costs import CostModel
 from src.decision import CriticalGates, PositionState, ResearchAction, StoppingConfig, build_final_decision, build_policy, regions
 from src.first_passage import BoundaryDefinition, ResidualDirection
 from src.monte_carlo import simulate_ou_first_passage
+from src.config import Frequency
+from src.prediction import FrozenPairModel, PredictionStore, classify_live_pair, make_live_evaluation, new_prediction_snapshot
 from statsmodels.tsa.stattools import adfuller, kpss
 
 
@@ -318,19 +321,74 @@ def _decision_monitor(prices: pd.DataFrame) -> None:
     with st.container(border=True):
         st.subheader("Why this signal exists")
         st.dataframe(pd.DataFrame(final.why_signal["items"]), hide_index=True)
+    st.session_state["latest_final_decision"] = final
+    if st.button("Create new frozen prediction", key="create_frozen_prediction"):
+        try:
+            frozen = new_prediction_snapshot(target_ticker=target, current_price=float(prices[target].iloc[-1]), data_cutoff=final.model_cutoff, frequency=Frequency.DAILY, data_source="uploaded CSV", model_version="step-11", frozen_outputs=final.snapshot_outputs(), notes="Created intentionally from the Decision Monitor.")
+            PredictionStore().save_snapshot(frozen)
+            st.success(f"Created frozen prediction {frozen.prediction_id}.")
+        except (TypeError, ValueError, OSError) as exc:
+            st.error(f"Could not save frozen prediction: {exc}")
+
+
+def _live_prediction_monitor() -> None:
+    st.header("Live prediction monitor")
+    st.caption("MODEL PARAMETERS ARE FROZEN. Live prices update only the observation; they never refit the model.")
+    store = PredictionStore()
+    identifiers = store.list_snapshots()
+    if not identifiers:
+        st.info("No saved predictions yet. Create one intentionally in Decision monitor.")
+        return
+    identifier = st.selectbox("Stored frozen prediction", identifiers, key="live_prediction_id")
+    try:
+        snapshot = store.load_snapshot(identifier)
+    except ValueError as exc:
+        st.error(str(exc)); return
+    final = snapshot.model_outputs.get("final_decision", {})
+    with st.container(border=True):
+        st.subheader("Model frozen")
+        st.write({"timestamp": snapshot.created_at.isoformat(), "data cutoff": snapshot.data_cutoff.isoformat(), "parameter hash": snapshot.parameter_hash})
+    with st.container(border=True):
+        st.subheader("Original model")
+        st.write({"initial residual": final.get("current_residual"), "entry regions": (final.get("long_entry_region"), final.get("short_entry_region")), "exit": final.get("exit_region"), "stop": final.get("stop_region"), "action": final.get("research_action"), "P(exit before stop)": snapshot.probability_outputs.get("exit_before_stop"), "P(exit 5d)": snapshot.probability_outputs.get("exit_5d"), "P(exit 10d)": snapshot.probability_outputs.get("exit_10d"), "P(exit 20d)": snapshot.probability_outputs.get("exit_20d"), "expected economic value": final.get("expected_economic_value"), "confidence": snapshot.consensus_outputs.get("confidence")})
+    pair_data = snapshot.model_outputs.get("pair")
+    if not pair_data:
+        st.info("This frozen model has no exact price mapping. Its stored residual and statistical boundaries remain the reference; do not fabricate a dollar target.")
+        return
+    try:
+        model = FrozenPairModel(pair_data["target_ticker"], pair_data["peer_ticker"], float(pair_data["alpha"]), float(pair_data["beta"]), float(final["current_residual"]), tuple(final["long_entry_region"]) if final.get("long_entry_region") else None, tuple(final["short_entry_region"]) if final.get("short_entry_region") else None, float(final["exit_region"][0]) if final.get("exit_region") else None, float(final["stop_region"][0]) if final.get("stop_region") else None, float(final["stop_region"][1]) if final.get("stop_region") else None)
+        with st.form("live_pair_prices"):
+            target_price = float(st.number_input(f"Live {model.target_ticker} price", min_value=.000001, value=float(snapshot.current_price)))
+            peer_price = float(st.number_input(f"Live {model.peer_ticker} price", min_value=.000001, value=100.0))
+            elapsed = int(st.number_input("Elapsed trading days", min_value=0, value=0, step=1))
+            position = st.selectbox("Original position state", ["FLAT", "LONG_RESIDUAL", "SHORT_RESIDUAL"])
+            calculate = st.form_submit_button("Evaluate live observation")
+        if not calculate: return
+        live = classify_live_pair(model, target_price=target_price, peer_price=peer_price, position=position)
+        with st.container(border=True):
+            st.subheader("Live market")
+            st.write({"current frozen-model residual": live.current_residual, "distance to entry": live.distance_to_entry, "distance to exit": live.distance_to_exit, "distance to stop": live.distance_to_stop, "current region": live.state.value, "fraction reverted": live.fraction_reverted, "implied target prices": live.implied_target_prices})
+        if st.button("Save separate evaluation", key="save_live_evaluation"):
+            evaluation = make_live_evaluation(snapshot, timestamp=datetime.now(timezone.utc), live_prices={model.target_ticker: target_price, model.peer_ticker: peer_price}, live_state=live, elapsed_trading_days=elapsed)
+            store.save_evaluation(evaluation)
+            st.success("Saved a separate evaluation; the frozen prediction remains unchanged.")
+    except (KeyError, TypeError, ValueError) as exc:
+        st.error(f"Stored pair model cannot be evaluated: {exc}")
 
 
 def main() -> None:
     st.set_page_config(page_title="Mean Reversion Research Engine", layout="wide")
     st.title("Mean Reversion Research Engine")
     st.caption("Step 4 research foundation — educational quantitative research; not investment advice.")
-    decision_monitor, landing, single_stock, pairs, ou_dynamics = st.tabs(["Decision monitor", "Project overview", "Single stock models", "Pairs research", "OU dynamics"])
+    decision_monitor, live_monitor, landing, single_stock, pairs, ou_dynamics = st.tabs(["Decision monitor", "Live prediction monitor", "Project overview", "Single stock models", "Pairs research", "OU dynamics"])
     with decision_monitor:
         prices = st.session_state.get("uploaded_prices")
         if prices is None:
             st.info("Upload and validate a CSV in Project overview first.")
         else:
             _decision_monitor(prices)
+    with live_monitor:
+        _live_prediction_monitor()
     with landing:
         st.info("Implemented: validated CSV inputs, immutable prediction-journal infrastructure, prior-window residual research models, rolling pair diagnostics, and reusable OU dynamics estimation.")
         st.subheader("CSV preview")

@@ -10,7 +10,8 @@
 8. First-passage and Monte Carlo convergence engine
 9. Optimal stopping, transaction costs and stop-loss integration
 10. Final model consensus, explainability, and confidence framework (complete)
-11. Minimum holding period and repeated switching research
+11. Forward prediction monitor and immutable live evaluation (complete)
+12. Minimum holding period and repeated switching research
 12. Strict walk-forward event study and backtesting
 13. Forward prediction scoring and calibration analysis
 14. Streamlit research workstation
