@@ -2,6 +2,14 @@
 
 These are **research outputs**, not recommendations. They describe a statistical model and do not establish that a price will move, that a residual is stationary, or that a result is economically tradeable.
 
+## Step 10 final decision monitor
+
+The final decision object is a frozen research record, not a personalized recommendation. It can report `ENTER_LONG`, `ENTER_SHORT`, `WAIT`, `HOLD_LONG`, `HOLD_SHORT`, `EXIT_LONG`, `EXIT_SHORT`, `STOP_LONG`, `STOP_SHORT`, `NO_SIGNAL`, `CONFLICTED`, or `INSUFFICIENT_DATA`.
+
+Critical gates are evaluated first. Insufficient data, invalid residuals, failed stationarity, invalid OU fits, unacceptable half-life, parameter instability, and `SEVERE_BREAK` always prevent a timing signal; confidence and consensus cannot override them. Consensus combines valid model evidence but limits the effective vote of models in a shared dependency group. The 0--100 confidence score is calculated only after gates pass. Its documented components are deviation (capped at |z|=2.5), stationarity, OU agreement, half-life, stability, regime, consensus, first-passage quality, economic value, and boundary robustness.
+
+`WhySignalResult` lists every material check with its measured value, threshold, PASS/CAUTION/FAIL status, and explanation. A saved `FinalResearchDecision` is serialized inside the immutable prediction snapshot; later evaluations are separate records and do not modify it.
+
 - **Price:** the supplied adjusted close.
 - **Log price:** `ln(price)`; used because relative changes become additive.
 - **Return:** the close-to-close log return, `ln(P_t / P_{t-1})`.

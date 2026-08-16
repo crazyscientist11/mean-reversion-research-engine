@@ -8,6 +8,21 @@ from typing import Any
 from src.config import Frequency
 
 
+class FrozenDict(dict):
+    """A JSON-serializable mapping that rejects in-place mutation."""
+    def _immutable(self, *args: Any, **kwargs: Any) -> None:
+        raise TypeError("prediction snapshots are immutable")
+    __setitem__ = __delitem__ = clear = pop = popitem = setdefault = update = _immutable
+
+
+def _freeze(value: Any) -> Any:
+    if isinstance(value, dict):
+        return FrozenDict({key: _freeze(item) for key, item in value.items()})
+    if isinstance(value, list):
+        return tuple(_freeze(item) for item in value)
+    return value
+
+
 def parameter_hash(parameters: dict[str, Any]) -> str:
     """SHA-256 of canonical JSON; stable across Python processes and dict order."""
     payload = json.dumps(parameters, sort_keys=True, separators=(",", ":"), default=str)
@@ -49,6 +64,8 @@ class PredictionSnapshot:
             raise ValueError("current_price must be positive")
         if not self.model_version.strip() or len(self.parameter_hash) != 64:
             raise ValueError("model_version and a SHA-256 parameter_hash are required")
+        for name in ("model_outputs", "ou_outputs", "stopping_outputs", "probability_outputs", "diagnostic_outputs", "consensus_outputs"):
+            object.__setattr__(self, name, _freeze(getattr(self, name)))
 
     def to_dict(self) -> dict[str, Any]:
         result = asdict(self)
@@ -95,4 +112,3 @@ class PredictionEvaluation:
         record = record.copy()
         record["evaluation_timestamp"] = _timestamp(record["evaluation_timestamp"])
         return cls(**record)
-

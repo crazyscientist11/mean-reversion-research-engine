@@ -15,6 +15,10 @@ Transaction-cost-aware and risk-aware optimal-stopping thresholds may produce mo
 3. Optimal-stopping thresholds do not outperform transparent fixed-threshold rules after costs.
 4. Model agreement does not improve forward convergence accuracy.
 
+## Step 10 consensus hypothesis
+
+Agreement among valid, sufficiently distinct residual constructions may be useful descriptive evidence, but models sharing prices, transformations, or fitted relationships are not treated as independent votes. A confidence score is an auditable research summary, not a probability of profitability and never overrides a failed critical gate. This hypothesis requires strict walk-forward testing and calibration.
+
 These are hypotheses to test, not established facts.
 
 ## Step 2 scope

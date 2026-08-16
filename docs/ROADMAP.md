@@ -9,8 +9,8 @@
 7. Stationarity, regime and parameter-stability diagnostics
 8. First-passage and Monte Carlo convergence engine
 9. Optimal stopping, transaction costs and stop-loss integration
-10. Minimum holding period and repeated switching research
-11. Consensus and confidence framework
+10. Final model consensus, explainability, and confidence framework (complete)
+11. Minimum holding period and repeated switching research
 12. Strict walk-forward event study and backtesting
 13. Forward prediction scoring and calibration analysis
 14. Streamlit research workstation
