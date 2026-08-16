@@ -20,6 +20,7 @@ from src.config import Frequency
 from src.prediction import FrozenPairModel, PredictionStore, classify_live_pair, make_live_evaluation, new_prediction_snapshot
 from src.backtest import BenchmarkConfig, run_backtest
 from src.backtest.engine import BacktestConfig
+from src.data import SeriesMapping, data_quality_report, detect_csv_format, model_readiness_report, normalize_bloomberg_frame
 from statsmodels.tsa.stattools import adfuller, kpss
 
 
@@ -400,11 +401,62 @@ def _backtest_research(prices: pd.DataFrame) -> None:
     st.info("Research questions are intentionally unanswered until supported by walk-forward evidence: residual filtering versus benchmark, half-life, gate quality, stopping after costs, consensus, and probability calibration.")
 
 
+def _data_workspace() -> None:
+    st.header("Data workspace")
+    st.caption("Upload a CSV, inspect its raw layout, normalize deliberately, then choose model roles. Uploaded files stay in this browser session and are not saved to the repository.")
+    upload=st.file_uploader("Upload wide or Bloomberg-style CSV",type=["csv"],key="data_workspace_upload")
+    if upload is None: return
+    try: raw=pd.read_csv(BytesIO(upload.getvalue()))
+    except Exception as exc: st.error(f"CSV could not be read: {exc}"); return
+    st.subheader("1. Raw preview"); st.dataframe(raw.head(20),hide_index=True)
+    detected=detect_csv_format(raw); st.subheader("2. Format detection"); st.write("Wide format" if detected=="wide" else "Repeated date/price pairs — explicit mapping required")
+    normalized=None
+    if detected=="wide":
+        if st.button("Normalize wide CSV",key="normalize_wide"):
+            normalized=normalize_bloomberg_frame(raw)
+    else:
+        count=int(st.number_input("Number of series to map",min_value=1,max_value=max(1,len(raw.columns)//2),value=1,step=1))
+        with st.form("repeated_pair_mapping"):
+            mappings=[]
+            for i in range(count):
+                st.markdown(f"Series {i+1}")
+                ticker=st.text_input("Ticker",key=f"mapping_ticker_{i}")
+                date=st.selectbox("Date column",list(raw.columns),key=f"mapping_date_{i}")
+                price=st.selectbox("Price column",list(raw.columns),key=f"mapping_price_{i}")
+                mappings.append(SeriesMapping(ticker,date,price))
+            normalize=st.form_submit_button("Normalize mapped series")
+        if normalize: normalized=normalize_bloomberg_frame(raw,mappings=mappings)
+    if normalized is not None:
+        try: normalized=validate_price_frame(normalized)
+        except ValueError as exc: st.error(f"Normalization completed, but prices are not model-safe: {exc}"); return
+        st.session_state["uploaded_prices"]=normalized
+        st.success("Normalized data is ready for this session. No missing values were filled.")
+    prices=st.session_state.get("uploaded_prices")
+    if prices is None: return
+    st.subheader("3. Normalized data and quality")
+    st.dataframe(prices.head(20)); report=data_quality_report(prices); st.json(report.to_dict())
+    st.subheader("4. Model readiness"); st.dataframe(model_readiness_report(prices).to_frame(),hide_index=True)
+    st.subheader("5. Roles and universes")
+    columns=list(prices.columns); defaults_market=columns.index("SPY") if "SPY" in columns else 0
+    with st.form("data_roles"):
+        target=st.selectbox("Target ticker",columns)
+        market=st.selectbox("Market factor",columns,index=defaults_market)
+        sector=st.selectbox("Sector factor (optional)",["None"]+columns)
+        peers=st.multiselect("Peer universe",columns,default=[ticker for ticker in columns if ticker!=target])
+        pca=st.multiselect("PCA universe (manually exclude ETFs/factors if desired)",columns,default=columns)
+        confirm=st.form_submit_button("Confirm roles")
+    if confirm: st.session_state["data_roles"]={"target":target,"market":market,"sector":None if sector=="None" else sector,"peers":peers,"pca":pca}; st.success("Roles confirmed. Continue to Decision Monitor when ready.")
+    clean=prices.reset_index().to_csv(index=False).encode("utf-8")
+    st.download_button("Download clean normalized CSV",clean,file_name="normalized_prices.csv",mime="text/csv")
+
+
 def main() -> None:
     st.set_page_config(page_title="Mean Reversion Research Engine", layout="wide")
     st.title("Mean Reversion Research Engine")
     st.caption("Step 4 research foundation — educational quantitative research; not investment advice.")
-    decision_monitor, live_monitor, backtest, landing, single_stock, pairs, ou_dynamics = st.tabs(["Decision monitor", "Live prediction monitor", "Backtest research", "Project overview", "Single stock models", "Pairs research", "OU dynamics"])
+    data_workspace, decision_monitor, live_monitor, backtest, landing, single_stock, pairs, ou_dynamics = st.tabs(["Data workspace", "Decision monitor", "Live prediction monitor", "Backtest research", "Project overview", "Single stock models", "Pairs research", "OU dynamics"])
+    with data_workspace:
+        _data_workspace()
     with decision_monitor:
         prices = st.session_state.get("uploaded_prices")
         if prices is None:
@@ -419,18 +471,8 @@ def main() -> None:
         else: _backtest_research(prices)
     with landing:
         st.info("Implemented: validated CSV inputs, immutable prediction-journal infrastructure, prior-window residual research models, rolling pair diagnostics, and reusable OU dynamics estimation.")
-        st.subheader("CSV preview")
-        upload = st.file_uploader("Upload a wide-form adjusted-price CSV (optional)", type=["csv"])
-        if upload is not None:
-            try:
-                prices = _uploaded_prices(upload)
-                st.dataframe(prices.head(20))
-                summary = summarize_prices(prices, frequency="daily", source="uploaded CSV preview")
-                st.subheader("Data summary")
-                st.json({key: str(value) for key, value in summary.items()})
-                st.session_state["uploaded_prices"] = prices
-            except (TypeError, ValueError) as exc:
-                st.error(f"CSV cannot be used: {exc}")
+        st.subheader("CSV workflow")
+        st.write("Use Data workspace to upload, normalize, review quality, select roles, and download a clean session-only CSV.")
         st.subheader("Prediction journal")
         st.write("A forward prediction snapshot is frozen at its data cutoff. Later realized outcomes are stored separately, preventing historical predictions from being rewritten.")
         st.subheader("Roadmap")
