@@ -18,6 +18,8 @@ from src.first_passage import BoundaryDefinition, ResidualDirection
 from src.monte_carlo import simulate_ou_first_passage
 from src.config import Frequency
 from src.prediction import FrozenPairModel, PredictionStore, classify_live_pair, make_live_evaluation, new_prediction_snapshot
+from src.backtest import BenchmarkConfig, run_backtest
+from src.backtest.engine import BacktestConfig
 from statsmodels.tsa.stattools import adfuller, kpss
 
 
@@ -376,11 +378,33 @@ def _live_prediction_monitor() -> None:
         st.error(f"Stored pair model cannot be evaluated: {exc}")
 
 
+def _backtest_research(prices: pd.DataFrame) -> None:
+    st.header("Backtest research")
+    st.caption("Strict walk-forward research: signals use information through close t and execute at close t+1. Results are not investment recommendations.")
+    st.warning("Parameter sweeps are descriptive only. Do not select settings by maximum Sharpe, final wealth, or holdout performance without explicit precommitment. Multiple testing, data snooping, survivorship, lookahead, and selection bias remain material risks.")
+    with st.form("backtest_research"):
+        target=st.selectbox("Backtest target", list(prices.columns))
+        window=int(st.number_input("Training window", min_value=20, value=min(60,max(20,len(prices)//2)), step=1))
+        entry=float(st.number_input("Benchmark entry |z|", min_value=.1, value=2.0, step=.1)); exit=float(st.number_input("Benchmark exit |z|", min_value=.0, value=.5, step=.1)); stop=float(st.number_input("Benchmark stop |z|", min_value=.1, value=4.0, step=.1))
+        submitted=st.form_submit_button("Run chronological benchmark research")
+    if not submitted: return
+    try: output=run_backtest(prices[target],config=BacktestConfig(BenchmarkConfig(window,entry,exit,stop)))
+    except (TypeError,ValueError) as exc: st.error(f"Backtest cannot run: {exc}"); return
+    result=output["benchmark"]
+    with st.container(border=True):
+        st.subheader("Benchmark results — in-sample / validation / out-of-sample must be configured chronologically before interpreting results")
+        st.dataframe(pd.DataFrame([result.metrics]),hide_index=True)
+    with st.container(border=True): st.subheader("Event study"); st.dataframe(output["events"],hide_index=True)
+    with st.container(border=True): st.subheader("Equity / P&L progression and drawdown"); st.line_chart(pd.DataFrame({"Equity":result.equity,"Drawdown":result.drawdown}))
+    with st.container(border=True): st.subheader("Calibration"); st.dataframe(result.calibration,hide_index=True); st.subheader("Bucket analysis"); st.dataframe(result.buckets,hide_index=True)
+    st.info("Research questions are intentionally unanswered until supported by walk-forward evidence: residual filtering versus benchmark, half-life, gate quality, stopping after costs, consensus, and probability calibration.")
+
+
 def main() -> None:
     st.set_page_config(page_title="Mean Reversion Research Engine", layout="wide")
     st.title("Mean Reversion Research Engine")
     st.caption("Step 4 research foundation — educational quantitative research; not investment advice.")
-    decision_monitor, live_monitor, landing, single_stock, pairs, ou_dynamics = st.tabs(["Decision monitor", "Live prediction monitor", "Project overview", "Single stock models", "Pairs research", "OU dynamics"])
+    decision_monitor, live_monitor, backtest, landing, single_stock, pairs, ou_dynamics = st.tabs(["Decision monitor", "Live prediction monitor", "Backtest research", "Project overview", "Single stock models", "Pairs research", "OU dynamics"])
     with decision_monitor:
         prices = st.session_state.get("uploaded_prices")
         if prices is None:
@@ -389,6 +413,10 @@ def main() -> None:
             _decision_monitor(prices)
     with live_monitor:
         _live_prediction_monitor()
+    with backtest:
+        prices=st.session_state.get("uploaded_prices")
+        if prices is None: st.info("Upload and validate a CSV in Project overview first.")
+        else: _backtest_research(prices)
     with landing:
         st.info("Implemented: validated CSV inputs, immutable prediction-journal infrastructure, prior-window residual research models, rolling pair diagnostics, and reusable OU dynamics estimation.")
         st.subheader("CSV preview")
