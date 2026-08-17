@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from src.data.validation import summarize_prices, validate_price_frame
+from src.data.validation import validate_price_frame
 from src.models import detrended_log_price_residual, factor_residual_model, rolling_zscore_benchmark
 from src.models.common import ResidualModelResult
 from src.models.pairs import PairModelResult, peer_comparison, rolling_pair_model
@@ -26,15 +26,6 @@ from statsmodels.tsa.stattools import adfuller, kpss
 
 def _format(value: float | None, decimals: int = 4) -> str:
     return "Not available" if value is None or not np.isfinite(value) else f"{value:.{decimals}f}"
-
-
-def _uploaded_prices(upload: st.runtime.uploaded_file_manager.UploadedFile) -> pd.DataFrame:
-    preview = pd.read_csv(BytesIO(upload.getvalue()))
-    if "Date" not in preview.columns:
-        raise ValueError("A Date column is required.")
-    prices = preview.drop(columns=["Date"]).copy()
-    prices.index = pd.DatetimeIndex(pd.to_datetime(preview["Date"], errors="raise"), name="Date")
-    return validate_price_frame(prices.sort_index())
 
 
 @st.cache_data(show_spinner=False)
@@ -450,11 +441,27 @@ def _data_workspace() -> None:
     st.download_button("Download clean normalized CSV",clean,file_name="normalized_prices.csv",mime="text/csv")
 
 
+def _learn_models() -> None:
+    st.header("Learn the models")
+    st.caption("Plain-language reference for the research workstation. None of these concepts establishes a profitable or guaranteed outcome.")
+    topics={
+        "Z-score and detrending":"A z-score is a deviation from a prior statistical baseline measured in prior sample standard deviations. Detrending first removes a fitted historical log-price trend; its residual is not fundamental fair value.",
+        "Factor residuals and cointegration":"A factor residual is a target return less a model-implied market/sector return. Cointegration tests a long-run pair relationship; correlation alone is not cointegration.",
+        "Kalman and PCA":"A Kalman filter permits a pair alpha/beta to evolve through time. PCA reconstructs shared return variation from a training window; the remaining residual is model-specific.",
+        "Stationarity, ADF, and KPSS":"ADF and KPSS are complementary diagnostics with assumptions and finite-sample limits. A gate can reject a state when the diagnostics conflict; it does not prove stationarity.",
+        "OU and half-life":"The OU state is dX = κ(θ−X)dt + σdW. κ is per trading day, σ per square-root trading day, and ln(2)/κ is expected-displacement half-life—not a realized boundary-hitting time.",
+        "First passage and optimal stopping":"First passage estimates which boundary a simulated OU path hits first. The finite-horizon policy compares explicit entry, hold, exit, and stop values after costs; it can create bounded research entry regions.",
+        "Costs and consensus":"Basis-point spread/slippage and fixed costs enter the economic decision before action selection. Consensus records agreement among valid models while limiting duplicate evidence from dependent models.",
+    }
+    for title,text in topics.items():
+        with st.expander(title): st.write(text)
+
+
 def main() -> None:
     st.set_page_config(page_title="Mean Reversion Research Engine", layout="wide")
     st.title("Mean Reversion Research Engine")
     st.caption("Step 4 research foundation — educational quantitative research; not investment advice.")
-    data_workspace, decision_monitor, live_monitor, backtest, landing, single_stock, pairs, ou_dynamics = st.tabs(["Data workspace", "Decision monitor", "Live prediction monitor", "Backtest research", "Project overview", "Single stock models", "Pairs research", "OU dynamics"])
+    data_workspace, decision_monitor, single_stock, pairs, ou_dynamics, model_validity, live_monitor, backtest, learn, landing = st.tabs(["Data workspace", "Decision monitor", "Single stock models", "Pairs research", "OU dynamics", "Model validity", "Live prediction monitor", "Backtest research", "Learn the models", "Project overview"])
     with data_workspace:
         _data_workspace()
     with decision_monitor:
@@ -501,6 +508,15 @@ def main() -> None:
             st.warning("At least two ticker columns are required.")
         else:
             _ou_dynamics(prices)
+    with model_validity:
+        prices=st.session_state.get("uploaded_prices")
+        if prices is None: st.info("Upload and normalize data in Data workspace first.")
+        else:
+            st.header("Model validity")
+            st.dataframe(model_readiness_report(prices).to_frame(),hide_index=True)
+            st.caption("Readiness is a data-length check, not validation that a residual will converge.")
+    with learn:
+        _learn_models()
 
 
 if __name__ == "__main__":

@@ -2,17 +2,13 @@
 
 ```mermaid
 flowchart TD
-  P["Data providers"] --> C["CSV (implemented)"]
-  P --> B["Future Bloomberg adapter"]
-  C --> M["MarketDataBundle (implemented)"]
-  B --> M
-  M --> R["Residual engines (future)"] --> D["Diagnostics (future)"] --> O["OU layer (future)"]
-  O --> F["First-passage layer (future)"] --> S["Optimal-stopping layer (future)"] --> K["Consensus (future)"]
-  K --> H["Historical backtest (future)"]
-  K --> FP["Forward prediction (future)"] --> J["Prediction journal (implemented)"] --> E["Future evaluation"]
+  D["CSV data"] --> N["Normalization and quality report"] --> R["Residual engines"]
+  R --> G["Diagnostics and hard gates"] --> O["OU dynamics"]
+  O --> F["First passage"] --> S["Optimal stopping"] --> C["Consensus and confidence"]
+  C --> FD["Final research decision"] --> FP["Frozen prediction"] --> LE["Live evaluation"]
+  R --> WF["Chronological walk-forward event study"]
+  C --> WF
+  WF --> BR["Benchmark versus full-model research results"]
 ```
 
-The implemented CSV provider yields a validated `MarketDataBundle` independent of future source adapters. The JSON prediction journal is deliberately separate from model logic: snapshot files capture information available at creation; later evaluation files never alter them.
-
-Future residual engines can include rolling z-score, detrended log price, market/sector, static and dynamic pairs, PCA, cross-sectional, and basket approaches. OU is a downstream dynamics layer—not an independent equilibrium engine.
-
+Data normalization outer-merges explicit repeated-pair mappings on observed dates without filling values. Residual engines own their model-specific state; diagnostics and hard gates decide whether downstream OU/stopping research is eligible. A `PredictionSnapshot` freezes all model-time outputs and a `PredictionEvaluation` records later observations separately. The walk-forward branch creates a signal from data through close *t* and executes it at close *t+1*.

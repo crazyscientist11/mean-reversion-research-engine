@@ -1,4 +1,4 @@
-# Math guide (Step 1 concepts)
+# Math guide
 
 - **Price:** observed adjusted close, (P_t).
 - **Simple return:** (P_t/P_{t-1}-1).
@@ -7,8 +7,8 @@
 - **Residual/spread:** a later-model output after removing a specified relationship; neither is automatically a tradeable signal.
 - **Statistical equilibrium:** a model-implied reference level, distinct from fundamental fair value.
 - **Z-score:** standardized distance from a chosen reference distribution; it is a benchmark, not proof of stationarity.
-- **Stationarity:** a statistical property assessed with explicit tests and assumptions in a future module.
-- **OU concept:** a continuous-time mean-reverting stochastic process that can describe signed residuals; it is not implemented here.
+- **Stationarity:** a statistical property assessed with explicit tests and assumptions; it is a gate, not proof of future convergence.
+- **OU concept:** a continuous-time mean-reverting stochastic process that can describe signed residuals and is fitted in trading-day units.
 - **First passage:** the time until a process reaches an exit or stop boundary.
 - **Optimal stopping:** choosing entry, hold, exit, or stop timing using an explicit objective.
 - **Cost-aware thresholds:** thresholds whose economics incorporate trading costs instead of subtracting costs only after the fact.
@@ -45,7 +45,7 @@ The exact-MLE estimator uses `X_(t+dt)|X_t` with conditional mean `theta + (X_t-
 
 For a valid fit, half-life is `ln(2)/kappa`; 75% and 90% conditional expected displacement decay times are `-ln(0.25)/kappa` and `-ln(0.10)/kappa`. Conditional expectation at horizon `h` is `theta + (X_t-theta)exp(-kappa*h)`, with the same exact-transition variance formula using `h`.
 
-These are conditional expectation and distribution statements. They do **not** give the first time a stochastic path hits an exit boundary, guarantee realized convergence, or supply optimal trading thresholds. First-passage and optimal-stopping research remain future work.
+These are conditional expectation and distribution statements. They do **not** give the first time a stochastic path hits an exit boundary or guarantee realized convergence. First-passage and finite-horizon optimal-stopping research are implemented separately and use these fitted parameters without changing their interpretation.
 
 ## Step 5 PCA and cross-sectional residuals
 

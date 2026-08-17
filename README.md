@@ -1,24 +1,21 @@
 # Mean Reversion Research Engine
 
-An extensible workstation for testing whether carefully constructed equity residuals show measurable mean reversion. This is an educational quantitative-research project, not a live trading system, broker integration, investment recommendation, or evidence of future profitability.
+An educational quantitative-research workstation for testing whether carefully constructed equity residuals exhibit measurable convergence. It is not a live trading system, investment recommendation, or evidence of future profitability.
 
-## Current status
+## Objective and thesis
 
-**Step 5 — PCA and cross-sectional research.** The repository provides validated daily CSV ingestion, non-mutating transforms, immutable forward-prediction infrastructure, prior-window single-stock/pair residual research, OU diagnostics, PCA common-factor reconstruction, and cross-sectional residual states. It intentionally does not implement Kalman filtering, optimal stopping, first-passage analysis, live trading, or Bloomberg integration.
+Raw prices combine trends, common factors, and changing relationships. This project compares a transparent fixed-z benchmark with residual constructions such as detrended log price, factor residuals, static/dynamic pairs, PCA, and cross-sectional states. The research thesis is that large, stationary, stable residual dislocations may be more informative than raw-price deviations; it is a testable hypothesis, not a conclusion.
 
-## Research question
+## Features
 
-After removing deterministic and systematic effects, do sufficiently large, stationary, stable residual dislocations converge more reliably than raw price deviations? The hypotheses are explicitly testable—not established claims—at [docs/RESEARCH_THESIS.md](docs/RESEARCH_THESIS.md).
+- Wide and guided Bloomberg-style CSV normalization without Bloomberg APIs or licensed data.
+- Prior-window residual engines, pair/cointegration diagnostics, Kalman pairs, PCA, OU AR(1)/MLE, first-passage simulation, and cost-aware finite-horizon stopping research.
+- Gate-first consensus, explainable final research states, frozen predictions, and later live evaluations.
+- Strict walk-forward event studies and benchmark research where a close-*t* signal executes at close *t+1*.
 
-## Architecture
+See [architecture](docs/ARCHITECTURE.md), [math guide](docs/MATH_GUIDE.md), [Bloomberg CSV guide](docs/BLOOMBERG_CSV_GUIDE.md), and [walk-forward guide](docs/WALK_FORWARD_GUIDE.md).
 
-CSV inputs become a source-independent `MarketDataBundle`. Later stages will add residual engines, diagnostics, OU and first-passage layers, and economic threshold research. A `PredictionSnapshot` freezes the model-time record; `PredictionEvaluation` records later outcomes separately. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-
-## Data and privacy
-
-The included sample is **SYNTHETIC** and is not market history. Never commit licensed data, credentials, or Bloomberg exports. Private data paths and `*.bbg.csv` are ignored. Bloomberg is a documented future adapter only; the public repository runs without Bloomberg libraries.
-
-## Installation and commands
+## Install and run
 
 Requires Python 3.11.
 
@@ -26,23 +23,18 @@ Requires Python 3.11.
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-python -m pytest -q
-python scripts/run_smoke_tests.py
 python -m streamlit run mean_reversion_engine.py
 ```
 
-## Repository layout
+Use the **Data workspace** to upload `Date,TICKER,...` wide CSVs or explicitly map repeated date/price pairs. Do not commit Bloomberg exports: the repository ignores `data/private/`, `data/bloomberg/`, and `*.bbg.csv`.
 
-- `src/data/`: provider contract, CSV loader, validation, transforms
-- `src/prediction/`: immutable snapshot/evaluation schemas and JSON store
-- `docs/`: thesis, math, architecture, data, literature, and roadmap notes
-- `data/`: synthetic example only
-- `tests/`: deterministic foundation tests
+## Validation
 
-## Planned models
-
-Future work includes simple z-score benchmarks; drift, factor, pairs, Kalman, PCA and cross-sectional residuals; AR(1) and exact-MLE OU estimation; first-passage simulation; cost- and stop-aware optimal stopping; walk-forward research; and a richer Streamlit workstation. The staged scope is in [docs/ROADMAP.md](docs/ROADMAP.md).
+```powershell
+python -m pytest -q
+python scripts/run_smoke_tests.py
+```
 
 ## Limitations
 
-No model or signal is implemented in Step 1, daily data are the initial design frequency, and no result should be interpreted as a recommendation or profitability claim.
+Models are fitted to historical data and are vulnerable to parameter uncertainty, structural breaks, transaction-cost assumptions, selection bias, and data-quality issues. First-passage and stopping results are numerical research outputs. Backtests and calibration tables do not establish live performance, profitability, or suitability for capital.

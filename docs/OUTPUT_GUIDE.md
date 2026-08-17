@@ -1,4 +1,4 @@
-# Step 2 output guide
+# Output guide
 
 These are **research outputs**, not recommendations. They describe a statistical model and do not establish that a price will move, that a residual is stationary, or that a result is economically tradeable.
 
